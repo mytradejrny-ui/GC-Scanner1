@@ -65,18 +65,26 @@ bgcolor(showLondon and inNY     ? color.new(color.green, 92) : na, title="NY Ses
 swingHigh = ta.pivothigh(high, swingLen, swingLen)
 swingLow  = ta.pivotlow (low,  swingLen, swingLen)
 
-var float sh1 = na, var float sh2 = na  // last two swing highs
-var float sl1 = na, var float sl2 = na  // last two swing lows
-var int   shBar1 = na, var int shBar2 = na
-var int   slBar1 = na, var int slBar2 = na
+var float sh1 = na
+var float sh2 = na
+var float sl1 = na
+var float sl2 = na
+var int   shBar1 = na
+var int   shBar2 = na
+var int   slBar1 = na
+var int   slBar2 = na
 
 if not na(swingHigh)
-    sh2 := sh1 ; sh1 := swingHigh
-    shBar2 := shBar1 ; shBar1 := bar_index[swingLen]
+    sh2 := sh1
+    sh1 := swingHigh
+    shBar2 := shBar1
+    shBar1 := bar_index[swingLen]
 
 if not na(swingLow)
-    sl2 := sl1 ; sl1 := swingLow
-    slBar2 := slBar1 ; slBar1 := bar_index[swingLen]
+    sl2 := sl1
+    sl1 := swingLow
+    slBar2 := slBar1
+    slBar1 := bar_index[swingLen]
 
 isLH = not na(sh1) and not na(sh2) and sh1 < sh2
 isLL = not na(sl1) and not na(sl2) and sl1 < sl2
@@ -86,16 +94,12 @@ isHL = not na(sl1) and not na(sl2) and sl1 > sl2
 if not na(swingHigh)
     lbl = isLH ? "LH" : "HH"
     col = isLH ? color.red : color.green
-    label.new(bar_index[swingLen], high[swingLen] + ta.atr(14) * 0.3,
-              lbl, style=label.style_label_down,
-              color=col, textcolor=color.white, size=size.small)
+    label.new(bar_index[swingLen], high[swingLen] + ta.atr(14) * 0.3, lbl, style=label.style_label_down, color=col, textcolor=color.white, size=size.small)
 
 if not na(swingLow)
     lbl = isLL ? "LL" : "HL"
     col = isLL ? color.red : color.green
-    label.new(bar_index[swingLen], low[swingLen] - ta.atr(14) * 0.3,
-              lbl, style=label.style_label_up,
-              color=col, textcolor=color.white, size=size.small)
+    label.new(bar_index[swingLen], low[swingLen] - ta.atr(14) * 0.3, lbl, style=label.style_label_up, color=col, textcolor=color.white, size=size.small)
 
 // ══════════════════════════════════════════════════════════════
 // ORDER BLOCK DETECTION
@@ -122,19 +126,17 @@ var int   bullOBBar  = na
 
 if bearOBFormed
     bearOBHigh := high[obLookback]
-    bearOBLow  := open[obLookback]   // body of the OB candle
+    bearOBLow  := open[obLookback]
     bearOBBar  := bar_index[obLookback]
     if showFVG
-        box.new(bearOBBar, bearOBHigh, bar_index + extendBars, bearOBLow,
-                border_color=color.red, bgcolor=color.new(color.red, 80), border_width=1)
+        box.new(bearOBBar, bearOBHigh, bar_index + extendBars, bearOBLow, border_color=color.red, bgcolor=color.new(color.red, 80), border_width=1)
 
 if bullOBFormed
     bullOBHigh := open[obLookback]
     bullOBLow  := low[obLookback]
     bullOBBar  := bar_index[obLookback]
     if showFVG
-        box.new(bullOBBar, bullOBHigh, bar_index + extendBars, bullOBLow,
-                border_color=color.green, bgcolor=color.new(color.green, 80), border_width=1)
+        box.new(bullOBBar, bullOBHigh, bar_index + extendBars, bullOBLow, border_color=color.green, bgcolor=color.new(color.green, 80), border_width=1)
 
 // ══════════════════════════════════════════════════════════════
 // FAIR VALUE GAPS (FVG)
@@ -144,14 +146,10 @@ bearFVG = showFVG and high[2] < low[0]
 bullFVG = showFVG and low[2]  > high[0]
 
 if bearFVG
-    box.new(bar_index - 2, low[0], bar_index + extendBars, high[2],
-            border_color=color.new(color.red, 60),
-            bgcolor=color.new(color.red, 88), border_width=1, border_style=line.style_dotted)
+    box.new(bar_index - 2, low[0], bar_index + extendBars, high[2], border_color=color.new(color.red, 60), bgcolor=color.new(color.red, 88), border_width=1, border_style=line.style_dotted)
 
 if bullFVG
-    box.new(bar_index - 2, low[2], bar_index + extendBars, high[0],
-            border_color=color.new(color.green, 60),
-            bgcolor=color.new(color.green, 88), border_width=1, border_style=line.style_dotted)
+    box.new(bar_index - 2, low[2], bar_index + extendBars, high[0], border_color=color.new(color.green, 60), bgcolor=color.new(color.green, 88), border_width=1, border_style=line.style_dotted)
 
 // ══════════════════════════════════════════════════════════════
 // SIGNAL CONDITIONS
@@ -166,27 +164,13 @@ sellSignal = inBearOB and isLH and bearishBias and (inLondon or inNY)
 inBullOB   = not na(bullOBHigh) and high >= bullOBLow and low <= bullOBHigh
 buySignal  = inBullOB and isHL and bullishBias and (inLondon or inNY)
 
-if showSignals
-    plotshape(sellSignal, "SELL", shape.labeldown, location.abovebar,
-              color.red, text="SELL", textcolor=color.white, size=size.normal)
-    plotshape(buySignal,  "BUY",  shape.labelup,   location.belowbar,
-              color.green, text="BUY",  textcolor=color.white, size=size.normal)
+plotshape(showSignals and sellSignal, "SELL", shape.labeldown, location.abovebar, color.red, text="SELL", textcolor=color.white, size=size.normal)
+plotshape(showSignals and buySignal,  "BUY",  shape.labelup,   location.belowbar, color.green, text="BUY",  textcolor=color.white, size=size.normal)
 
 // ══════════════════════════════════════════════════════════════
 // ALERT CONDITIONS  (set these up in TradingView → Alerts)
 // ══════════════════════════════════════════════════════════════
-alertcondition(sellSignal,
-     "🔴 GC SELL — OB + LH + London/NY",
-     "GC SELL SIGNAL | Price: {{close}} | Bearish OB + Lower High + Session Active")
-
-alertcondition(buySignal,
-     "🟢 GC BUY — OB + HL + London/NY",
-     "GC BUY SIGNAL | Price: {{close}} | Bullish OB + Higher Low + Session Active")
-
-alertcondition(inBearOB and (inLondon or inNY),
-     "⚠️ GC Price Entering Bearish OB",
-     "GC ALERT | Price entering Bearish Order Block at {{close}} during active session")
-
-alertcondition(bearOBFormed,
-     "📦 New Bearish OB Formed",
-     "GC | New Bearish Order Block formed at {{close}} | Top: {{high}} Bot: {{open}}")
+alertcondition(sellSignal, "GC SELL - OB + LH + London/NY", "GC SELL SIGNAL | Price: {{close}} | Bearish OB + Lower High + Session Active")
+alertcondition(buySignal, "GC BUY - OB + HL + London/NY", "GC BUY SIGNAL | Price: {{close}} | Bullish OB + Higher Low + Session Active")
+alertcondition(inBearOB and (inLondon or inNY), "GC Price Entering Bearish OB", "GC ALERT | Price entering Bearish Order Block at {{close}} during active session")
+alertcondition(bearOBFormed, "New Bearish OB Formed", "GC | New Bearish Order Block formed at {{close}} | Top: {{high}} Bot: {{open}}")
