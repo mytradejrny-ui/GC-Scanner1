@@ -50,9 +50,9 @@ async def send_telegram(text: str) -> bool:
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    # Optional secret check
+    # Optional secret check — accept via header OR query param (TV free plan can't send headers)
     if WEBHOOK_SECRET:
-        secret = request.headers.get("X-Webhook-Secret", "")
+        secret = request.headers.get("X-Webhook-Secret") or request.query_params.get("secret", "")
         if secret != WEBHOOK_SECRET:
             raise HTTPException(status_code=403, detail="Invalid secret")
 
