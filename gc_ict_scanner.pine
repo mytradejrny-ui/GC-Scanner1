@@ -1,0 +1,192 @@
+//@version=5
+indicator("GC ICT SMC Scanner", overlay=true, max_boxes_count=100, max_labels_count=200, max_lines_count=100)
+
+// ══════════════════════════════════════════════════════════════
+// INPUTS
+// ══════════════════════════════════════════════════════════════
+grpStructure = "Market Structure"
+swingLen     = input.int(10,  "Swing Pivot Length",         group=grpStructure, minval=3)
+
+grpOB        = "Order Blocks"
+obLookback   = input.int(3,   "OB Formation Lookback",      group=grpOB, minval=1, maxval=10)
+extendBars   = input.int(40,  "Extend OB Boxes (bars)",     group=grpOB, minval=5)
+
+grpEMA       = "EMA Trend Filter"
+ema1Len      = input.int(20,  "Fast EMA",                   group=grpEMA)
+ema2Len      = input.int(50,  "Mid EMA",                    group=grpEMA)
+ema3Len      = input.int(200, "Slow EMA",                   group=grpEMA)
+
+grpSession   = "Sessions"
+showLondon   = input.bool(true, "Highlight London Session", group=grpSession)
+// London = 02:00–05:00 EST (07:00–10:00 GMT)
+londonStart  = input.int(2,  "London Start Hour (EST)",     group=grpSession, minval=0, maxval=23)
+londonEnd    = input.int(5,  "London End Hour (EST)",       group=grpSession, minval=0, maxval=23)
+// New York = 09:30–12:00 EST
+nyStart      = input.int(9,  "NY Start Hour (EST)",         group=grpSession, minval=0, maxval=23)
+nyEnd        = input.int(12, "NY End Hour (EST)",           group=grpSession, minval=0, maxval=23)
+
+grpDisplay   = "Display"
+showSignals  = input.bool(true, "Show Entry Signals",       group=grpDisplay)
+showFVG      = input.bool(true, "Show Fair Value Gaps",     group=grpDisplay)
+
+// ══════════════════════════════════════════════════════════════
+// EMA RIBBON
+// ══════════════════════════════════════════════════════════════
+ema1 = ta.ema(close, ema1Len)
+ema2 = ta.ema(close, ema2Len)
+ema3 = ta.ema(close, ema3Len)
+
+bearishBias = ema1 < ema2 and ema2 < ema3
+bullishBias = ema1 > ema2 and ema2 > ema3
+
+emaColor = bearishBias ? color.red : bullishBias ? color.green : color.gray
+
+plot(ema1, "EMA 20",  color=emaColor,        linewidth=1)
+plot(ema2, "EMA 50",  color=emaColor,        linewidth=2)
+plot(ema3, "EMA 200", color=color.new(color.orange, 20), linewidth=2)
+
+// EMA ribbon fill
+ema1Plot = plot(ema1, display=display.none)
+ema2Plot = plot(ema2, display=display.none)
+fill(ema1Plot, ema2Plot, color=color.new(emaColor, 85), title="EMA Ribbon Fill")
+
+// ══════════════════════════════════════════════════════════════
+// SESSION HIGHLIGHTING
+// ══════════════════════════════════════════════════════════════
+inLondon = hour(time, "America/New_York") >= londonStart and hour(time, "America/New_York") < londonEnd
+inNY     = hour(time, "America/New_York") >= nyStart     and hour(time, "America/New_York") < nyEnd
+
+bgcolor(showLondon and inLondon ? color.new(color.blue,  92) : na, title="London Session BG")
+bgcolor(showLondon and inNY     ? color.new(color.green, 92) : na, title="NY Session BG")
+
+// ══════════════════════════════════════════════════════════════
+// MARKET STRUCTURE — SWING HIGHS / LOWS
+// ══════════════════════════════════════════════════════════════
+swingHigh = ta.pivothigh(high, swingLen, swingLen)
+swingLow  = ta.pivotlow (low,  swingLen, swingLen)
+
+var float sh1 = na, var float sh2 = na  // last two swing highs
+var float sl1 = na, var float sl2 = na  // last two swing lows
+var int   shBar1 = na, var int shBar2 = na
+var int   slBar1 = na, var int slBar2 = na
+
+if not na(swingHigh)
+    sh2 := sh1 ; sh1 := swingHigh
+    shBar2 := shBar1 ; shBar1 := bar_index[swingLen]
+
+if not na(swingLow)
+    sl2 := sl1 ; sl1 := swingLow
+    slBar2 := slBar1 ; slBar1 := bar_index[swingLen]
+
+isLH = not na(sh1) and not na(sh2) and sh1 < sh2
+isLL = not na(sl1) and not na(sl2) and sl1 < sl2
+isHH = not na(sh1) and not na(sh2) and sh1 > sh2
+isHL = not na(sl1) and not na(sl2) and sl1 > sl2
+
+if not na(swingHigh)
+    lbl = isLH ? "LH" : "HH"
+    col = isLH ? color.red : color.green
+    label.new(bar_index[swingLen], high[swingLen] + ta.atr(14) * 0.3,
+              lbl, style=label.style_label_down,
+              color=col, textcolor=color.white, size=size.small)
+
+if not na(swingLow)
+    lbl = isLL ? "LL" : "HL"
+    col = isLL ? color.red : color.green
+    label.new(bar_index[swingLen], low[swingLen] - ta.atr(14) * 0.3,
+              lbl, style=label.style_label_up,
+              color=col, textcolor=color.white, size=size.small)
+
+// ══════════════════════════════════════════════════════════════
+// ORDER BLOCK DETECTION
+// ══════════════════════════════════════════════════════════════
+// Bearish OB  = last bullish candle before a bearish impulse move
+// Bullish OB  = last bearish candle before a bullish impulse move
+
+isBull = close > open
+isBear = close < open
+
+// A "displacement" candle = large bodied candle (body > 60% of ATR)
+atr14  = ta.atr(14)
+largeBearDisplacement = isBear and (open - close) > atr14 * 0.6
+largeBullDisplacement = isBull and (close - open) > atr14 * 0.6
+
+// Bearish OB: bullish candle N bars ago, followed by large bearish displacement now
+bearOBFormed = largeBearDisplacement and isBull[obLookback]
+bullOBFormed = largeBullDisplacement and isBear[obLookback]
+
+var float bearOBHigh = na, var float bearOBLow = na
+var float bullOBHigh = na, var float bullOBLow = na
+var int   bearOBBar  = na
+var int   bullOBBar  = na
+
+if bearOBFormed
+    bearOBHigh := high[obLookback]
+    bearOBLow  := open[obLookback]   // body of the OB candle
+    bearOBBar  := bar_index[obLookback]
+    if showFVG
+        box.new(bearOBBar, bearOBHigh, bar_index + extendBars, bearOBLow,
+                border_color=color.red, bgcolor=color.new(color.red, 80), border_width=1)
+
+if bullOBFormed
+    bullOBHigh := open[obLookback]
+    bullOBLow  := low[obLookback]
+    bullOBBar  := bar_index[obLookback]
+    if showFVG
+        box.new(bullOBBar, bullOBHigh, bar_index + extendBars, bullOBLow,
+                border_color=color.green, bgcolor=color.new(color.green, 80), border_width=1)
+
+// ══════════════════════════════════════════════════════════════
+// FAIR VALUE GAPS (FVG)
+// ══════════════════════════════════════════════════════════════
+// Bearish FVG: high[2] < low[0]  →  gap between candle -2 top and candle 0 bottom
+bearFVG = showFVG and high[2] < low[0]
+bullFVG = showFVG and low[2]  > high[0]
+
+if bearFVG
+    box.new(bar_index - 2, low[0], bar_index + extendBars, high[2],
+            border_color=color.new(color.red, 60),
+            bgcolor=color.new(color.red, 88), border_width=1, border_style=line.style_dotted)
+
+if bullFVG
+    box.new(bar_index - 2, low[2], bar_index + extendBars, high[0],
+            border_color=color.new(color.green, 60),
+            bgcolor=color.new(color.green, 88), border_width=1, border_style=line.style_dotted)
+
+// ══════════════════════════════════════════════════════════════
+// SIGNAL CONDITIONS
+// ══════════════════════════════════════════════════════════════
+// Price returning into Bearish OB
+inBearOB = not na(bearOBHigh) and high >= bearOBLow and low <= bearOBHigh
+
+// SELL SIGNAL: in bearish OB + LH structure + bearish EMA bias + London or NY session
+sellSignal = inBearOB and isLH and bearishBias and (inLondon or inNY)
+
+// BUY SIGNAL: in bullish OB + HL structure + bullish EMA bias + London or NY session
+inBullOB   = not na(bullOBHigh) and high >= bullOBLow and low <= bullOBHigh
+buySignal  = inBullOB and isHL and bullishBias and (inLondon or inNY)
+
+if showSignals
+    plotshape(sellSignal, "SELL", shape.labeldown, location.abovebar,
+              color.red, text="SELL", textcolor=color.white, size=size.normal)
+    plotshape(buySignal,  "BUY",  shape.labelup,   location.belowbar,
+              color.green, text="BUY",  textcolor=color.white, size=size.normal)
+
+// ══════════════════════════════════════════════════════════════
+// ALERT CONDITIONS  (set these up in TradingView → Alerts)
+// ══════════════════════════════════════════════════════════════
+alertcondition(sellSignal,
+     "🔴 GC SELL — OB + LH + London/NY",
+     "GC SELL SIGNAL | Price: {{close}} | Bearish OB + Lower High + Session Active")
+
+alertcondition(buySignal,
+     "🟢 GC BUY — OB + HL + London/NY",
+     "GC BUY SIGNAL | Price: {{close}} | Bullish OB + Higher Low + Session Active")
+
+alertcondition(inBearOB and (inLondon or inNY),
+     "⚠️ GC Price Entering Bearish OB",
+     "GC ALERT | Price entering Bearish Order Block at {{close}} during active session")
+
+alertcondition(bearOBFormed,
+     "📦 New Bearish OB Formed",
+     "GC | New Bearish Order Block formed at {{close}} | Top: {{high}} Bot: {{open}}")
