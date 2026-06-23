@@ -25,6 +25,12 @@ londonEnd    = input.int(5,  "London End Hour (EST)",       group=grpSession, mi
 nyStart      = input.int(9,  "NY Start Hour (EST)",         group=grpSession, minval=0, maxval=23)
 nyEnd        = input.int(12, "NY End Hour (EST)",           group=grpSession, minval=0, maxval=23)
 
+grpLiq       = "Liquidity"
+showLiq      = input.bool(true, "Show BSL / SSL Liquidity Lines", group=grpLiq)
+liqTolerance = input.float(0.15, "Equal H/L Tolerance (% of ATR)", group=grpLiq, minval=0.05, maxval=1.0, step=0.05)
+liqExtend    = input.int(60,  "Extend Liquidity Lines (bars)",     group=grpLiq, minval=10)
+markSweeps   = input.bool(true, "Mark Liquidity Sweeps",           group=grpLiq)
+
 grpDisplay   = "Display"
 showSignals  = input.bool(true, "Show Entry Signals",       group=grpDisplay)
 showFVG      = input.bool(true, "Show Fair Value Gaps",     group=grpDisplay)
@@ -119,8 +125,10 @@ largeBullDisplacement = isBull and (close - open) > atr14 * 0.6
 bearOBFormed = largeBearDisplacement and isBull[obLookback]
 bullOBFormed = largeBullDisplacement and isBear[obLookback]
 
-var float bearOBHigh = na, var float bearOBLow = na
-var float bullOBHigh = na, var float bullOBLow = na
+var float bearOBHigh = na
+var float bearOBLow  = na
+var float bullOBHigh = na
+var float bullOBLow  = na
 var int   bearOBBar  = na
 var int   bullOBBar  = na
 
@@ -152,17 +160,72 @@ if bullFVG
     box.new(bar_index - 2, low[2], bar_index + extendBars, high[0], border_color=color.new(color.green, 60), bgcolor=color.new(color.green, 88), border_width=1, border_style=line.style_dotted)
 
 // ══════════════════════════════════════════════════════════════
+// LIQUIDITY — BSL (Buy-Side) / SSL (Sell-Side)
+// ══════════════════════════════════════════════════════════════
+// BSL = equal highs where short stops + breakout buy orders rest (price wants to sweep UP)
+// SSL = equal lows where long stops + breakout sell orders rest (price wants to sweep DOWN)
+var float bslLevel  = na
+var float sslLevel  = na
+var int   bslBar    = na
+var int   sslBar    = na
+var line  bslLine   = na
+var line  sslLine   = na
+var label bslLabel  = na
+var label sslLabel  = na
+var bool  bslSwept  = false
+var bool  sslSwept  = false
+
+liqTol = ta.atr(14) * liqTolerance
+
+// Detect BSL: current swing high near previous swing high (equal highs within tolerance)
+if not na(swingHigh) and not na(sh2) and math.abs(swingHigh - sh2) <= liqTol
+    bslLevel := math.max(swingHigh, sh2)
+    bslBar   := bar_index[swingLen]
+    bslSwept := false
+    if showLiq
+        if not na(bslLine)
+            line.delete(bslLine)
+            label.delete(bslLabel)
+        bslLine  := line.new(bslBar, bslLevel, bar_index + liqExtend, bslLevel, color=color.new(color.aqua, 0), width=2, style=line.style_solid)
+        bslLabel := label.new(bar_index + liqExtend, bslLevel, "BSL " + str.tostring(bslLevel, "#.##"), style=label.style_label_left, color=color.new(color.aqua, 0), textcolor=color.white, size=size.small)
+
+// Detect SSL: current swing low near previous swing low (equal lows within tolerance)
+if not na(swingLow) and not na(sl2) and math.abs(swingLow - sl2) <= liqTol
+    sslLevel := math.min(swingLow, sl2)
+    sslBar   := bar_index[swingLen]
+    sslSwept := false
+    if showLiq
+        if not na(sslLine)
+            line.delete(sslLine)
+            label.delete(sslLabel)
+        sslLine  := line.new(sslBar, sslLevel, bar_index + liqExtend, sslLevel, color=color.new(color.fuchsia, 0), width=2, style=line.style_solid)
+        sslLabel := label.new(bar_index + liqExtend, sslLevel, "SSL " + str.tostring(sslLevel, "#.##"), style=label.style_label_left, color=color.new(color.fuchsia, 0), textcolor=color.white, size=size.small)
+
+// Sweep detection: wick beyond level then close back inside (classic liquidity grab)
+bslSweep = not na(bslLevel) and not bslSwept and high > bslLevel and close < bslLevel
+sslSweep = not na(sslLevel) and not sslSwept and low  < sslLevel and close > sslLevel
+
+if bslSweep
+    bslSwept := true
+    if markSweeps
+        label.new(bar_index, high, "BSL SWEEP", style=label.style_label_down, color=color.new(color.aqua, 20), textcolor=color.white, size=size.small)
+
+if sslSweep
+    sslSwept := true
+    if markSweeps
+        label.new(bar_index, low, "SSL SWEEP", style=label.style_label_up, color=color.new(color.fuchsia, 20), textcolor=color.white, size=size.small)
+
+// ══════════════════════════════════════════════════════════════
 // SIGNAL CONDITIONS
 // ══════════════════════════════════════════════════════════════
-// Price returning into Bearish OB
 inBearOB = not na(bearOBHigh) and high >= bearOBLow and low <= bearOBHigh
+inBullOB = not na(bullOBHigh) and high >= bullOBLow and low <= bullOBHigh
 
-// SELL SIGNAL: in bearish OB + LH structure + bearish EMA bias + London or NY session
-sellSignal = inBearOB and isLH and bearishBias and (inLondon or inNY)
+// SELL: (Bearish OB + LH + bearish bias + session)  OR  (BSL swept + bearish bias + session)
+sellSignal = (inBearOB and isLH and bearishBias and (inLondon or inNY)) or (bslSweep and bearishBias and (inLondon or inNY))
 
-// BUY SIGNAL: in bullish OB + HL structure + bullish EMA bias + London or NY session
-inBullOB   = not na(bullOBHigh) and high >= bullOBLow and low <= bullOBHigh
-buySignal  = inBullOB and isHL and bullishBias and (inLondon or inNY)
+// BUY: (Bullish OB + HL + bullish bias + session)  OR  (SSL swept + bullish bias + session)
+buySignal  = (inBullOB and isHL and bullishBias and (inLondon or inNY)) or (sslSweep and bullishBias and (inLondon or inNY))
 
 plotshape(showSignals and sellSignal, "SELL", shape.labeldown, location.abovebar, color.red, text="SELL", textcolor=color.white, size=size.normal)
 plotshape(showSignals and buySignal,  "BUY",  shape.labelup,   location.belowbar, color.green, text="BUY",  textcolor=color.white, size=size.normal)
@@ -174,3 +237,5 @@ alertcondition(sellSignal, "GC SELL - OB + LH + London/NY", "GC SELL SIGNAL | Pr
 alertcondition(buySignal, "GC BUY - OB + HL + London/NY", "GC BUY SIGNAL | Price: {{close}} | Bullish OB + Higher Low + Session Active")
 alertcondition(inBearOB and (inLondon or inNY), "GC Price Entering Bearish OB", "GC ALERT | Price entering Bearish Order Block at {{close}} during active session")
 alertcondition(bearOBFormed, "New Bearish OB Formed", "GC | New Bearish Order Block formed at {{close}} | Top: {{high}} Bot: {{open}}")
+alertcondition(bslSweep, "BSL Sweep - Buy-Side Liquidity Grab", "GC | BSL SWEPT at {{high}} - shorts stopped out, watch for reversal SHORT")
+alertcondition(sslSweep, "SSL Sweep - Sell-Side Liquidity Grab", "GC | SSL SWEPT at {{low}} - longs stopped out, watch for reversal LONG")
