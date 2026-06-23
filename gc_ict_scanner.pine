@@ -177,29 +177,37 @@ var bool  sslSwept  = false
 
 liqTol = ta.atr(14) * liqTolerance
 
-// Detect BSL: current swing high near previous swing high (equal highs within tolerance)
-if not na(swingHigh) and not na(sh2) and math.abs(swingHigh - sh2) <= liqTol
-    bslLevel := math.max(swingHigh, sh2)
+// Detect BSL: EVERY confirmed swing high is buy-side liquidity. Equal highs = stronger (marked differently)
+if not na(swingHigh)
+    isEqualHigh = not na(sh2) and math.abs(swingHigh - sh2) <= liqTol
+    bslLevel := isEqualHigh ? math.max(swingHigh, sh2) : swingHigh
     bslBar   := bar_index[swingLen]
     bslSwept := false
     if showLiq
         if not na(bslLine)
             line.delete(bslLine)
             label.delete(bslLabel)
-        bslLine  := line.new(bslBar, bslLevel, bar_index + liqExtend, bslLevel, color=color.new(color.aqua, 0), width=2, style=line.style_solid)
-        bslLabel := label.new(bar_index + liqExtend, bslLevel, "BSL " + str.tostring(bslLevel, "#.##"), style=label.style_label_left, color=color.new(color.aqua, 0), textcolor=color.white, size=size.small)
+        lineColor = isEqualHigh ? color.aqua : color.new(color.aqua, 40)
+        lineWidth = isEqualHigh ? 2 : 1
+        labelText = isEqualHigh ? "BSL == " + str.tostring(bslLevel, "#.##") : "BSL " + str.tostring(bslLevel, "#.##")
+        bslLine  := line.new(bslBar, bslLevel, bar_index + liqExtend, bslLevel, color=lineColor, width=lineWidth, style=line.style_solid)
+        bslLabel := label.new(bar_index + liqExtend, bslLevel, labelText, style=label.style_label_left, color=lineColor, textcolor=color.white, size=size.small)
 
-// Detect SSL: current swing low near previous swing low (equal lows within tolerance)
-if not na(swingLow) and not na(sl2) and math.abs(swingLow - sl2) <= liqTol
-    sslLevel := math.min(swingLow, sl2)
+// Detect SSL: EVERY confirmed swing low is sell-side liquidity. Equal lows = stronger
+if not na(swingLow)
+    isEqualLow = not na(sl2) and math.abs(swingLow - sl2) <= liqTol
+    sslLevel := isEqualLow ? math.min(swingLow, sl2) : swingLow
     sslBar   := bar_index[swingLen]
     sslSwept := false
     if showLiq
         if not na(sslLine)
             line.delete(sslLine)
             label.delete(sslLabel)
-        sslLine  := line.new(sslBar, sslLevel, bar_index + liqExtend, sslLevel, color=color.new(color.fuchsia, 0), width=2, style=line.style_solid)
-        sslLabel := label.new(bar_index + liqExtend, sslLevel, "SSL " + str.tostring(sslLevel, "#.##"), style=label.style_label_left, color=color.new(color.fuchsia, 0), textcolor=color.white, size=size.small)
+        lineColor = isEqualLow ? color.fuchsia : color.new(color.fuchsia, 40)
+        lineWidth = isEqualLow ? 2 : 1
+        labelText = isEqualLow ? "SSL == " + str.tostring(sslLevel, "#.##") : "SSL " + str.tostring(sslLevel, "#.##")
+        sslLine  := line.new(sslBar, sslLevel, bar_index + liqExtend, sslLevel, color=lineColor, width=lineWidth, style=line.style_solid)
+        sslLabel := label.new(bar_index + liqExtend, sslLevel, labelText, style=label.style_label_left, color=lineColor, textcolor=color.white, size=size.small)
 
 // Sweep detection: wick beyond level then close back inside (classic liquidity grab)
 bslSweep = not na(bslLevel) and not bslSwept and high > bslLevel and close < bslLevel
