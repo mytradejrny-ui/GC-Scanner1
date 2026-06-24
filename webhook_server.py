@@ -4,9 +4,33 @@ Run: uvicorn webhook_server:app --host 0.0.0.0 --port 8000
 """
 
 import os
+import re
 import httpx
 from fastapi import FastAPI, Request, HTTPException
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+EASTERN = ZoneInfo("America/New_York")
+
+TICKER_PATTERNS = [
+    re.compile(r"\bon\s+([A-Z][A-Z0-9._:!]{1,15})"),
+    re.compile(r"\b([A-Z]{2,6}[0-9]?!?)\s+(?:at|@|on)\b"),
+    re.compile(r"\b(GC[0-9]?!?|MGC[0-9]?!?|ES[0-9]?!?|NQ[0-9]?!?|MNQ[0-9]?!?|MNQ[UMHZ]\d{4})\b"),
+]
+
+TF_PATTERN = re.compile(r"\bTF[:\s]+(\d+[mhDWMs]?|[DWM])\b", re.IGNORECASE)
+
+
+def extract_meta(raw: str):
+    ticker = ""
+    for pat in TICKER_PATTERNS:
+        m = pat.search(raw)
+        if m:
+            ticker = m.group(1)
+            break
+    tf_match = TF_PATTERN.search(raw)
+    tf = tf_match.group(1) if tf_match else ""
+    return ticker, tf
 
 app = FastAPI(title="GC ICT Alert Server")
 
@@ -23,13 +47,20 @@ EMOJI_MAP = {
 
 
 def build_message(raw: str) -> str:
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(EASTERN).strftime("%a %Y-%m-%d %I:%M %p %Z")
     emoji = "📊"
     for key, val in EMOJI_MAP.items():
         if key in raw.upper():
             emoji = val
             break
-    return f"{emoji} <b>GC FUTURES ALERT</b>\n\n{raw}\n\n🕐 <i>{now}</i>"
+    ticker, tf = extract_meta(raw)
+    footer_parts = [f"🕐 {now}"]
+    if ticker:
+        footer_parts.append(f"📈 {ticker}")
+    if tf:
+        footer_parts.append(f"⏱ {tf}")
+    footer = "  |  ".join(footer_parts)
+    return f"{emoji} <b>FUTURES ALERT</b>\n\n{raw}\n\n<i>{footer}</i>"
 
 
 async def send_telegram(text: str) -> bool:
